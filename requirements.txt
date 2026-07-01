@@ -1,1 +1,1 @@
-# no extra providers needed
+apache-airflow-providers-google==9.0.0
