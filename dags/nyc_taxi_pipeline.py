@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.sensors.bash import BashSensor
 from airflow.models import Variable
-from airflow.providers.google.cloud.sensors.bigquery import BigQueryTableExistenceSensor
 from datetime import datetime, timedelta
 
 default_args = {
@@ -24,13 +24,15 @@ with DAG(
     tags=['nyc_taxi', 'dbt']
 ) as dag:
 
-    # Sensor — wait for source table to exist
-    wait_for_source = BigQueryTableExistenceSensor(
-        task_id='wait_for_source_table',
-        project_id='confident-totem-458819-b7',
-        dataset_id='new_york_taxi_trips',
-        table_id='tlc_yellow_trips_2022',
-        gcp_conn_id='bigquery_default',
+    # Sensor — check dbt Cloud API is reachable
+    wait_for_dbt_api = BashSensor(
+        task_id='wait_for_dbt_api',
+        bash_command=f"""
+            curl -s -o /dev/null -w "%{{http_code}}" \
+            -H "Authorization: Token {DBT_API_TOKEN}" \
+            "https://cloud.getdbt.com/api/v2/accounts/{DBT_ACCOUNT_ID}/" \
+            | grep -q "200"
+        """,
         poke_interval=30,
         timeout=300
     )
@@ -40,12 +42,4 @@ with DAG(
         task_id='trigger_dbt_build',
         bash_command=f"""
             curl -s -X POST \
-            -H "Authorization: Token {DBT_API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{{"cause": "Triggered by Airflow"}}' \
-            "https://cloud.getdbt.com/api/v2/accounts/{DBT_ACCOUNT_ID}/jobs/{DBT_JOB_ID}/run/"
-        """
-    )
-
-    # Dependencies
-    wait_for_source >> trigger_dbt_job
+            -H "Authorization: Token {DBT_API_TOKEN}"
