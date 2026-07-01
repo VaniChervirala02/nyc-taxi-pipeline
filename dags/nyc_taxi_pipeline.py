@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.providers.dbt.cloud.operators.dbt import DbtCloudRunJobOperator
+from airflow.operators.bash import BashOperator
 from datetime import datetime, timedelta
 
 default_args = {
@@ -7,6 +7,9 @@ default_args = {
     'retries': 1,
     'retry_delay': timedelta(minutes=5)
 }
+
+DBT_ACCOUNT_ID = "271288"
+DBT_JOB_ID = "1082994"
 
 with DAG(
     dag_id='nyc_taxi_pipeline',
@@ -18,10 +21,14 @@ with DAG(
     tags=['nyc_taxi', 'dbt']
 ) as dag:
 
-    trigger_dbt_job = DbtCloudRunJobOperator(
+    trigger_dbt_job = BashOperator(
         task_id='trigger_dbt_build',
-        dbt_cloud_conn_id='dbt_cloud_default',
-        job_id=1082994,
-        check_interval=10,
-        timeout=300
+        bash_command=f"""
+            curl -s -X POST \
+            -H "Authorization: Token ${{DBT_API_TOKEN}}" \
+            -H "Content-Type: application/json" \
+            -d '{{"cause": "Triggered by Airflow"}}' \
+            "https://cloud.getdbt.com/api/v2/accounts/{DBT_ACCOUNT_ID}/jobs/{DBT_JOB_ID}/run/" \
+            | python3 -c "import sys,json; r=json.load(sys.stdin); print('Run ID:', r['data']['id']); exit(0 if r['status']['is_success'] else 1)"
+        """
     )
