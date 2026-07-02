@@ -14,12 +14,15 @@ default_args = {
 }
 
 DBT_ACCOUNT_ID = "271288"
-DBT_JOB_ID = "1082994"
+DBT_BUILD_JOB_ID = "1082994"
+DBT_TEST_JOB_ID = "1084237"
 DBT_API_TOKEN = Variable.get("DBT_API_TOKEN")
 
 SENSOR_CMD = 'RESPONSE=$(curl -s -w "\\n%{http_code}" -H "Authorization: Token ' + DBT_API_TOKEN + '" "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/") && echo "$RESPONSE" && echo "$RESPONSE" | tail -1 | grep -q "200"'
 
-TRIGGER_CMD = 'curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -H "Content-Type: application/json" -d \'{"cause": "Triggered by Airflow"}\' "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/jobs/' + DBT_JOB_ID + '/run/"'
+BUILD_CMD = 'curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -H "Content-Type: application/json" -d \'{"cause": "Triggered by Airflow"}\' "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/jobs/' + DBT_BUILD_JOB_ID + '/run/"'
+
+TEST_CMD = 'curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -H "Content-Type: application/json" -d \'{"cause": "Data quality check by Airflow"}\' "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/jobs/' + DBT_TEST_JOB_ID + '/run/"'
 
 def notify_success(context):
     print(f"Pipeline succeeded! DAG: {context['dag'].dag_id}")
@@ -48,17 +51,14 @@ with DAG(
         timeout=300
     )
 
-    trigger_dbt_job = BashOperator(
+    trigger_dbt_build = BashOperator(
         task_id='trigger_dbt_build',
-        bash_command=TRIGGER_CMD
+        bash_command=BUILD_CMD
     )
 
     check_data_quality = BashOperator(
         task_id='check_data_quality',
-        bash_command=TRIGGER_CMD.replace(
-            str(DBT_JOB_ID),
-            'dbt_test_job_id'
-        )
+        bash_command=TEST_CMD
     )
 
-    wait_for_dbt_api >> trigger_dbt_job >> check_data_quality
+    wait_for_dbt_api >> trigger_dbt_build >> check_data_quality
