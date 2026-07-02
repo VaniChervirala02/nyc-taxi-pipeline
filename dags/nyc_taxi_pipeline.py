@@ -20,8 +20,7 @@ DBT_API_TOKEN = Variable.get("DBT_API_TOKEN")
 
 SENSOR_CMD = 'RESPONSE=$(curl -s -w "\\n%{http_code}" -H "Authorization: Token ' + DBT_API_TOKEN + '" "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/") && echo "$RESPONSE" && echo "$RESPONSE" | tail -1 | grep -q "200"'
 
-BUILD_CMD = 'curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -H "Content-Type: application/json" -d \'{"cause": "Triggered by Airflow"}\' "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/jobs/' + DBT_BUILD_JOB_ID + '/run/"'
-
+BUILD_CMD = 'RUN_ID=$(curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -H "Content-Type: application/json" -d \'{"cause": "Triggered by Airflow"}\' "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/jobs/' + DBT_BUILD_JOB_ID + '/run/" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'data\'][\'id\'])") && echo "Run ID: $RUN_ID" && while true; do STATUS=$(curl -s -H "Authorization: Token ' + DBT_API_TOKEN + '" "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/runs/$RUN_ID/" | python3 -c "import sys,json; d=json.load(sys.stdin)[\'data\']; print(d[\'status\'])"); echo "Status: $STATUS"; if [ "$STATUS" = "10" ]; then echo "Success!"; exit 0; elif [ "$STATUS" = "20" ] || [ "$STATUS" = "30" ]; then echo "Failed!"; exit 1; fi; sleep 15; done'
 TEST_CMD = 'curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -H "Content-Type: application/json" -d \'{"cause": "Data quality check by Airflow"}\' "https://cloud.getdbt.com/api/v2/accounts/' + DBT_ACCOUNT_ID + '/jobs/' + DBT_TEST_JOB_ID + '/run/"'
 
 def notify_success(context):
