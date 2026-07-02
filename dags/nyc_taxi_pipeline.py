@@ -24,12 +24,10 @@ TRIGGER_CMD = 'curl -s -X POST -H "Authorization: Token ' + DBT_API_TOKEN + '" -
 def notify_success(context):
     print(f"Pipeline succeeded! DAG: {context['dag'].dag_id}")
     print(f"Run ID: {context['run_id']}")
-    print(f"Execution date: {context['logical_date']}")
 
 def notify_failure(context):
     print(f"Pipeline FAILED! DAG: {context['dag'].dag_id}")
     print(f"Failed task: {context['task_instance'].task_id}")
-    print(f"Run ID: {context['run_id']}")
 
 with DAG(
     dag_id='nyc_taxi_pipeline',
@@ -55,4 +53,12 @@ with DAG(
         bash_command=TRIGGER_CMD
     )
 
-    wait_for_dbt_api >> trigger_dbt_job
+    check_data_quality = BashOperator(
+        task_id='check_data_quality',
+        bash_command=TRIGGER_CMD.replace(
+            str(DBT_JOB_ID),
+            'dbt_test_job_id'
+        )
+    )
+
+    wait_for_dbt_api >> trigger_dbt_job >> check_data_quality
