@@ -21,92 +21,57 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install dbt-bigquery sqlfluff
+          pip install dbt-bigquery
 
-      - name: Check dbt project structure
+      - name: Check Airflow project structure
         run: |
-          echo "=== Checking dbt project structure ==="
+          echo "=== Checking Airflow project structure ==="
           
-          # Check required files exist
-          if [ -f "dbt_project.yml" ]; then
-            echo "✅ dbt_project.yml found"
+          if [ -d "dags" ]; then
+            echo "✅ dags/ directory found"
+            echo "DAGs found:"
+            find dags/ -name "*.py" | while read f; do
+              echo "  → $f"
+            done
           else
-            echo "❌ dbt_project.yml missing!"
+            echo "❌ dags/ directory missing!"
             exit 1
           fi
           
-          if [ -f "packages.yml" ]; then
-            echo "✅ packages.yml found"
+          if [ -f "Dockerfile" ]; then
+            echo "✅ Dockerfile found"
           else
-            echo "⚠️ packages.yml not found"
-          fi
-
-      - name: Check models exist
-        run: |
-          echo "=== Checking dbt models ==="
-          
-          if [ -d "models" ]; then
-            echo "✅ models/ directory found"
-            echo "Models found:"
-            find models/ -name "*.sql" | while read f; do
-              echo "  → $f"
-            done
-          else
-            echo "❌ models/ directory missing!"
+            echo "❌ Dockerfile missing!"
             exit 1
           fi
-
-      - name: Check tests exist
-        run: |
-          echo "=== Checking dbt tests ==="
           
-          if [ -d "tests" ]; then
-            echo "✅ tests/ directory found"
-            echo "Tests found:"
-            find tests/ -name "*.sql" | while read f; do
-              echo "  → $f"
-            done
+          if [ -f "requirements.txt" ]; then
+            echo "✅ requirements.txt found"
           else
-            echo "⚠️ tests/ directory not found"
+            echo "⚠️ requirements.txt not found"
           fi
 
-      - name: Check schema files
+      - name: Validate DAG files
         run: |
-          echo "=== Checking schema files ==="
-          
-          schema_count=$(find models/ -name "schema.yml" | wc -l)
-          echo "Schema files found: $schema_count"
-          
-          if [ "$schema_count" -gt 0 ]; then
-            echo "✅ Schema files exist"
-            find models/ -name "schema.yml" | while read f; do
-              echo "  → $f"
-            done
-          else
-            echo "⚠️ No schema.yml files found - tests may be missing!"
-          fi
-
-      - name: Validate SQL syntax
-        run: |
-          echo "=== Validating SQL files ==="
-          sql_files=$(find models/ -name "*.sql" | wc -l)
-          echo "SQL files to validate: $sql_files"
-          
-          find models/ -name "*.sql" | while read f; do
-            if grep -q "SELECT\|select" "$f"; then
-              echo "✅ $f - valid SQL structure"
-            else
-              echo "⚠️ $f - no SELECT found"
-            fi
+          echo "=== Validating DAG Python files ==="
+          find dags/ -name "*.py" | while read f; do
+            python -c "import ast; ast.parse(open('$f').read())" && \
+              echo "✅ $f - valid Python" || \
+              echo "❌ $f - syntax error!"
           done
+
+      - name: Check requirements
+        run: |
+          echo "=== Checking requirements.txt ==="
+          cat requirements.txt
+          echo "✅ Requirements file readable"
 
       - name: Pipeline summary
         run: |
           echo "==============================="
-          echo "dbt CI PIPELINE SUMMARY"
+          echo "AIRFLOW CI PIPELINE SUMMARY"
           echo "==============================="
-          echo "Models: $(find models/ -name '*.sql' | wc -l)"
-          echo "Tests:  $(find tests/ -name '*.sql' 2>/dev/null | wc -l)"
-          echo "Schema: $(find models/ -name 'schema.yml' | wc -l)"
+          echo "DAGs:         $(find dags/ -name '*.py' | wc -l)"
+          echo "Requirements: $(cat requirements.txt | wc -l) packages"
           echo "==============================="
           echo "✅ All checks passed!"
