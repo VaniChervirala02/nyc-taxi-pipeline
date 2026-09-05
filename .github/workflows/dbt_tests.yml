@@ -1,4 +1,4 @@
-name: dbt CI Pipeline
+name: Airflow DAG CI Pipeline
 
 on:
   push:
@@ -7,9 +7,9 @@ on:
     branches: [ main ]
 
 jobs:
-  dbt-validation:
+  airflow-validation:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,50 +21,91 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install dbt-bigquery
+          pip install apache-airflow
 
-      - name: Check Airflow project structure
+      - name: Check project structure
         run: |
-          echo "=== Checking Airflow project structure ==="
+          echo "=== Checking project structure ==="
           
           if [ -d "dags" ]; then
-            echo "✅ dags/ directory found"
-            echo "DAGs found:"
-            find dags/ -name "*.py" | while read f; do
-              echo "  → $f"
-            done
+            echo "✅ dags/ found"
           else
-            echo "❌ dags/ directory missing!"
+            echo "❌ dags/ missing!"
             exit 1
           fi
-          
+
           if [ -f "Dockerfile" ]; then
             echo "✅ Dockerfile found"
           else
             echo "❌ Dockerfile missing!"
             exit 1
           fi
-          
+
           if [ -f "requirements.txt" ]; then
             echo "✅ requirements.txt found"
           else
-            echo "⚠️ requirements.txt not found"
+            echo "❌ requirements.txt missing!"
+            exit 1
           fi
 
-      - name: Validate DAG files
+      - name: Validate Python syntax
         run: |
           echo "=== Validating DAG Python files ==="
+          failed=0
           find dags/ -name "*.py" | while read f; do
-            python -c "import ast; ast.parse(open('$f').read())" && \
-              echo "✅ $f - valid Python" || \
-              echo "❌ $f - syntax error!"
+            python -m py_compile "$f" && \
+              echo "✅ $f - syntax valid" || \
+              { echo "❌ $f - syntax error!"; exit 1; }
           done
+
+      - name: Check DAG imports
+        run: |
+          echo "=== Checking DAG imports ==="
+          find dags/ -name "*.py" | while read f; do
+            if grep -q "from airflow" "$f"; then
+              echo "✅ $f - has Airflow imports"
+            else
+              echo "⚠️ $f - no Airflow imports found"
+            fi
+          done
+
+      - name: Validate Dockerfile
+        run: |
+          echo "=== Validating Dockerfile ==="
+          if grep -q "FROM" Dockerfile; then
+            echo "✅ Dockerfile has FROM instruction"
+          else
+            echo "❌ Dockerfile missing FROM!"
+            exit 1
+          fi
+
+          if grep -q "RUN\|COPY\|CMD" Dockerfile; then
+            echo "✅ Dockerfile has valid instructions"
+          else
+            echo "⚠️ Dockerfile may be incomplete"
+          fi
 
       - name: Check requirements
         run: |
           echo "=== Checking requirements.txt ==="
-          cat requirements.txt
-          echo "✅ Requirements file readable"
+          pkg_count=$(cat requirements.txt | grep -v "^#" | grep -v "^$" | wc -l)
+          echo "Packages listed: $pkg_count"
+          
+          if [ "$pkg_count" -gt 0 ]; then
+            echo "✅ requirements.txt has $pkg_count packages"
+            cat requirements.txt
+          else
+            echo "⚠️ requirements.txt is empty"
+          fi
+
+      - name: Security check
+        run: |
+          echo "=== Security check ==="
+          if grep -r "password\|secret\|api_key\|token" dags/ --include="*.py" -l 2>/dev/null; then
+            echo "⚠️ Possible hardcoded credentials found - please review!"
+          else
+            echo "✅ No hardcoded credentials found"
+          fi
 
       - name: Pipeline summary
         run: |
@@ -72,6 +113,7 @@ jobs:
           echo "AIRFLOW CI PIPELINE SUMMARY"
           echo "==============================="
           echo "DAGs:         $(find dags/ -name '*.py' | wc -l)"
-          echo "Requirements: $(cat requirements.txt | wc -l) packages"
+          echo "Requirements: $(cat requirements.txt | grep -v '^#' | grep -v '^$' | wc -l) packages"
           echo "==============================="
           echo "✅ All checks passed!"
+          echo "==============================="
